@@ -1,0 +1,146 @@
+---
+- hosts: all
+  remote_user: admin
+  become: true
+  tasks:
+  - name: Install packages that allow apt to be used over HTTPS
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+
+# Installing docker and its dependencies
+  - name: Add an apt signing key for Docker
+    apt_key:
+      url: https://download.docker.com/linux/debian/gpg
+      state: present
+
+  - name: Add apt repository for stable version
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/debian buster stable
+      state: present
+
+  - name: Install docker and its dependecies
+    apt: 
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - docker-ce 
+      - docker-ce-cli 
+      - containerd.io
+    notify:
+      - docker status
+
+  - name: Creating /etc/docker/daemon.json file with optimal configs
+    copy:
+      dest: "/etc/docker/daemon.json"
+      content: |
+        {
+          "exec-opts": ["native.cgroupdriver=systemd"],
+          "log-driver": "json-file",
+          "log-opts": {
+            "max-size": "100m"
+          },
+          "storage-driver": "overlay2"
+        }
+
+  - name: Restart docker
+    service:
+      name: docker
+      daemon_reload: yes
+      state: restarted
+
+  - name: Add aws default user to docker group
+    user:
+      name: admin
+      group: docker
+
+# Disabling swap for kubelet to work
+  - name: Remove swapfile from /etc/fstab
+    mount:
+      name: "{{ item }}"
+      fstype: swap
+      state: absent
+    with_items:
+      - swap
+      - none
+
+  - name: Disable swap
+    command: swapoff -a
+    when: ansible_swaptotal_mb > 0
+
+  - name: Add an apt signing key for Kubernetes
+    apt_key:
+      url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      state: present
+
+# Installing kubelet, kubeadm and kubectl
+  - name: Adding apt repository for Kubernetes
+    apt_repository:
+      repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+      filename: kubernetes.list
+
+  - name: Install Kubernetes binaries
+    apt: 
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+        - kubelet 
+        - kubeadm 
+        - kubectl
+
+  #- name: Configure node ip
+  #  lineinfile:
+  #    path: /etc/default/kubelet
+  #    line: KUBELET_EXTRA_ARGS=--node-ip=18.228.206.194
+
+  - name: Restart kubelet
+    service:
+      name: kubelet
+      daemon_reload: yes
+      state: restarted
+
+# Initialize the cluster with kubeadm
+  - name: Initialize the Kubernetes cluster using kubeadm
+    command: "{{ item }}"
+    with_items:
+     - systemctl stop kubelet
+     - kubeadm init --apiserver-advertise-address {{ private_ip }} --node-name {{ hostname }} --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors="NumCPU,Mem"
+     
+# Setup kubeconfig file for admin
+  - name: Setup kubeconfig for admin user
+    command: "{{ item }}"
+    with_items:
+     - mkdir -p /home/admin/.kube
+     - cp -i /etc/kubernetes/admin.conf /home/admin/.kube/config
+     - chown admin:admin /home/admin/.kube/config
+
+# Setup networking provider and network policy engine
+  - name: Install flannel pod network
+    become: false
+    command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+# Generate join-command to add new nodes -- will be skipped for now
+  - name: Generate join command
+    command: kubeadm token create --print-join-command
+    register: join_command
+    
+  - name: Copy join command to local file
+    local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join-command"
+
+# Setup handler for checking Docker daemon
+  handlers:
+    - name: docker status
+      service: name=docker state=started
