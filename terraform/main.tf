@@ -21,23 +21,23 @@ resource "aws_instance" "kube_master" {
   instance_type = "t2.micro" # minimum requirement for kubernetes is 2 cpus and 2 gb of ram wich would be a chargeable EC2, so we will try the micro anyways
 
   tags = {
-    Name = "KubeMaster"
+    Name = "kube-master"
   }
 
-  key_name = "rda"
+  key_name = "k8s-lab"
 
   provisioner "remote-exec" {
     connection {
       host = self.public_ip
       user = "admin"
-      private_key = file("~/.ssh/rda.pem")
+      private_key = file("~/.ssh/k8s-lab.pem")
     }
 
     inline = ["echo 'Instance ${self.public_dns} is up!'"]
   }
 
   provisioner "local-exec" {
-    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --extra-vars 'private_ip=${self.private_ip} hostname=${split(".", self.private_dns)[0]}' --private-key ~/.ssh/rda.pem ../KubeSetup/master-playbook.yml"
+    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --extra-vars 'private_ip=${self.private_ip} hostname=${split(".", self.private_dns)[0]}' --private-key ~/.ssh/k8s-lab.pem ../ansible/master-playbook.yml"
   }
 }
 
@@ -68,23 +68,23 @@ resource "aws_instance" "kube_worker" {
   instance_type = "t2.micro" # minimum requirement for kubernetes is 2 cpus and 2 gb of ram wich would be a chargeable EC2, so we will try the micro anyways
 
   tags = {
-    Name = "KubeWorker"
+    Name = "kube-worker"
   }
 
-  key_name = "rda"
+  key_name = "k8s-lab"
 
   provisioner "remote-exec" {
     connection {
       host = self.public_ip
       user = "admin"
-      private_key = file("~/.ssh/rda.pem")
+      private_key = file("~/.ssh/k8s-lab.pem")
     }
 
     inline = ["echo 'Instance ${self.public_dns} is up!'"]
   }
 
   provisioner "local-exec" {
-    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --private-key ~/.ssh/rda.pem ../KubeSetup/node-playbook.yml"
+    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --private-key ~/.ssh/k8s-lab.pem ../ansible/node-playbook.yml"
   }
 }
 
