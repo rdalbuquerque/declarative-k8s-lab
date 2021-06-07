@@ -101,11 +101,6 @@
         - kubeadm 
         - kubectl
 
-  #- name: Configure node ip
-  #  lineinfile:
-  #    path: /etc/default/kubelet
-  #    line: KUBELET_EXTRA_ARGS=--node-ip=18.228.206.194
-
   - name: Restart kubelet
     service:
       name: kubelet
@@ -117,7 +112,7 @@
     command: "{{ item }}"
     with_items:
      - systemctl stop kubelet
-     - kubeadm init --apiserver-advertise-address {{ public_ip }} --node-name {{ hostname }} --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors="NumCPU,Mem"
+     - kubeadm init --apiserver-advertise-address {{ private_ip }} --apiserver-cert-extra-sans {{ public_ip }} --node-name {{ hostname }} --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors="NumCPU,Mem"
      
 # Setup kubeconfig file for admin
   - name: Setup kubeconfig for admin user

@@ -19,6 +19,7 @@ provider "aws" {}
 resource "aws_instance" "kube_master" {
   ami           = "ami-02e2a5679226e293c" # ID of default Debian 10 ami (64-bit|x86)
   instance_type = "t2.micro" # To keep it free tier eligible we will be using t2.micro
+  tags = {
     Name = "kube-master"
   }
   key_name = "k8s-lab"
@@ -33,7 +34,7 @@ resource "aws_instance" "kube_master" {
   }
 
   provisioner "local-exec" {
-    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --extra-vars 'public_ip=${self.public_ip} hostname=${split(".", self.private_dns)[0]}' --private-key ~/.ssh/k8s-lab.pem ../ansible/master-playbook.yml"
+    command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --extra-vars 'private_ip=${self.private_ip} hostname=${split(".", self.private_dns)[0]} public_ip=${self.public_ip}' --private-key ~/.ssh/k8s-lab.pem ../ansible/master-playbook.yml"
   }
 }
 
@@ -42,8 +43,9 @@ resource "aws_instance" "kube_worker" {
   depends_on = [aws_instance.kube_master]
   count = 2
 
-  ami           = "ami-02e2a5679226e293c" # ID of default Debian 10 ami (64-bit|x86)
+  ami          = "ami-02e2a5679226e293c" # ID of default Debian 10 ami (64-bit|x86)
   instance_type = "t2.micro" # To keep it free tier eligible we will be using t2.micro
+  tags = {
     Name = "kube-worker"
   }
   key_name = "k8s-lab"
@@ -60,5 +62,11 @@ resource "aws_instance" "kube_worker" {
 
   provisioner "local-exec" {
     command = "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -T 300 -i '${self.public_ip},' --private-key ~/.ssh/k8s-lab.pem ../ansible/node-playbook.yml"
+  }
+}
+
+resource "null_resource" "fetch_kubeconfig" {
+  provisioner "local-exec" {
+    command = "scp -i ~/.ssh/k8s-lab.pem admin@${aws_instance.kube_master.public_ip}:~/.kube/config ~/.kube/config && sed -i '/server/c\\    server: https://${aws_instance.kube_master.public_ip}:6443' ~/.kube/config"
   }
 }
